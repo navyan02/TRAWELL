@@ -1,10 +1,9 @@
-# Import necessary libraries
-import streamlit as st  # Streamlit for creating web apps
-import google.generativeai as palm  # Palm for AI text generation
-import os  # For interacting with the operating system
-from ics import Calendar, Event  # For working with iCalendar files
-from datetime import datetime, timedelta  # For working with dates and times
-import json  # For working with JSON data
+import streamlit as st
+import google.generativeai as palm
+import os
+from ics import Calendar, Event
+from datetime import datetime, timedelta
+import json
 
 # Configure page settings
 st.set_page_config(page_title="TRAWELL", page_icon="🌏", layout="wide")
@@ -12,7 +11,6 @@ st.set_page_config(page_title="TRAWELL", page_icon="🌏", layout="wide")
 # Add Image to sidebar
 with st.sidebar:
     st.image("TraWell.png", width=300)
-    # Add welcome message and introduction in the sidebar
     st.markdown("---")
     st.markdown("Welcome to **TRAWELL**")
     st.markdown("A personalized weekend getaway itinerary generator for all your traveling wants and needs!")
@@ -74,12 +72,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 st.markdown("<h1 class='fancy-font'>Where to?</h1>", unsafe_allow_html=True)
 
-# Configure Palm API
+
+
 palm.configure(api_key=os.getenv("PALM_API_KEY"))
 models = [m for m in palm.list_models() if 'generateText' in m.supported_generation_methods]
 model = models[0].name
 
-# Take user input
+
 city = st.text_input("Which city do you want to visit?:")
 days = st.number_input("Enter the duration of your trip:", min_value=1, max_value=4, step=1)
 days = int(days)
@@ -87,6 +86,7 @@ budget = st.slider("Select your budget", min_value=0, max_value=1000, step=50)
 budget = int(budget)
 people = st.slider("Select the number of people coming", min_value=1, max_value=10, step=1)
 people = int(people)
+
 
 # User preferences checkboxes
 st.text("Which 3 are most important to you?")
@@ -98,7 +98,9 @@ nature = st.checkbox("Nature 🌿")
 sports = st.checkbox("Sports 🏈")
 acc = st.checkbox("Accessibility accommodations available ♿")
 
+
 itinerary_json = None  # Define the variable outside the button click condition
+
 
 # Generate itinerary button
 if st.button("Generate Itinerary"):
@@ -119,8 +121,9 @@ if st.button("Generate Itinerary"):
     if acc:
         prompt += " exploring areas that have accessibility accommodations,"
 
-    # Limit the length of the output json string to 10000 characters.
+
     prompt += """Limit the length of the output json string to 10000 characters. Generate a structured JSON representation for the travel itinerary.
+
 
     {
   "days": [
@@ -155,7 +158,8 @@ if st.button("Generate Itinerary"):
 
     """
 
-    # Call the Palm API to generate itinerary
+
+    # Call the OpenAI API
     try:
         completion = palm.generate_text(
             model=model,
@@ -168,8 +172,9 @@ if st.button("Generate Itinerary"):
             st.error("Failed to generate itinerary. Please try again.")
         else:
             itinerary = completion.result.strip()
-            # Parse and load the JSON response
-            itinerary = itinerary[7:-3]  # Remove leading and trailing characters
+            #st.write("Debugging: Response from API:")
+            #st.write(itinerary)
+            itinerary = itinerary[7:-3]
             try:
                 itinerary_json = json.loads(itinerary)
             except json.JSONDecodeError as e:
@@ -177,6 +182,7 @@ if st.button("Generate Itinerary"):
     except Exception as e:
         st.error("An error occurred. Please try again.")
         st.error(str(e))
+
 
 # Display the itinerary
 if itinerary_json:
@@ -188,18 +194,55 @@ if itinerary_json:
             st.write(f"Location: {activity.get('location', 'No Location available')}")
             st.write(f"Link: {activity.get('link', 'No link available')}")
             st.write(f"Time: {activity.get('start')} - {activity.get('end')}")
-            # Calculate total cost for the activity
-            if activity['cost'].strip().lower() == 'free':
+            # Calculate the cost for the number of people. 
+            if 'cost' in activity and activity['cost'].strip().lower() == 'free':
                 total_cost = 0
             else:
                 try:
                     activity_cost = int(activity['cost'].split()[0].replace('$', ''))
                     total_cost = activity_cost * people
                 except ValueError:
-                    total_cost = 'Cost not specified'
+                    total_cost = 'Varies'
             st.write(f"Cost for {people} people: ${total_cost}")
             if acc:
                 st.write(f"Accessibility rating: {activity.get('accessibility', 'No accessibility information')}")
             else:
                 pass
             st.write("\n")
+
+def export_to_icloud(itinerary_json):
+    cal = Calendar()
+    
+    # Loop through each day in the itinerary
+    for day in itinerary_json["days"]:
+        for activity in day["activities"]:
+            # Extract activity details
+            title = activity["title"]
+            start_time = datetime.strptime(activity["start"], "%I:%M %p")
+            end_time = datetime.strptime(activity["end"], "%I:%M %p")
+            description = activity.get("description", "No description available")
+            location = activity.get("location", "No location available")
+            
+            # Create event
+            event = Event()
+            event.name = title
+            event.begin = start_time
+            event.end = end_time
+            event.description = description
+            event.location = location
+            
+            # Add event to calendar
+            cal.events.add(event)
+    
+    # Save calendar to .ics file
+    file_path = "itinerary.ics"
+    with open(file_path, "w") as f:
+        f.writelines(cal)
+    
+    return file_path
+
+# Button to export to iCloud calendar
+if itinerary_json:
+    if st.button("Export to iCloud Calendar"):
+        file_path = export_to_icloud(itinerary_json)
+        st.success(f"Download the itinerary file [here](data:file/ics;base64,{file_path})")
